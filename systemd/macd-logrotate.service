@@ -1,0 +1,6 @@
+[Unit]
+Description=Rotate MACD bot logs
+
+[Service]
+Type=oneshot
+ExecStart=logrotate --state=%h/.config/logrotate/state %h/.config/logrotate/macd-bot.conf
