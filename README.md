@@ -76,3 +76,6 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 - Monitor logs after 9:35 AM ET each weekday
 - Once first trade fills cleanly → add $200-500 CAD
 - At scale → switch back to SPY/QQQ/IWM (need ~$300 USD per position minimum)
+
+**May 8, 2026:**
+- **2FA on every restart** — IBC sends 2FA prompt to phone each time Gateway restarts because `autorestart file not found`. Root cause: systemd restarts Gateway externally, so IBC can't create the file. Fixed by setting `AutoRestartTime=03:30` in `~/ibc/config.ini` — IBC now manages the nightly IBKR reset (03:45 UTC) itself, creates autorestart file, skips 2FA. Gateway still has a separate configured exit at ~23:45 UTC (encrypted settings) that triggers one 2FA/day — left as-is.
