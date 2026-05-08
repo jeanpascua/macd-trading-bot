@@ -1,0 +1,11 @@
+[Unit]
+Description=Xvfb Virtual Display
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/Xvfb :10 -screen 0 1024x768x24 -ac
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

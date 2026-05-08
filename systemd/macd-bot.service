@@ -1,0 +1,14 @@
+[Unit]
+Description=MACD Trading Bot
+After=ibgateway.service
+Requires=ibgateway.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jean/trading
+ExecStart=/home/jean/lean-env/bin/python /home/jean/trading/macd_bot.py
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=default.target
