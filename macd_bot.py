@@ -15,20 +15,29 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-TICKERS       = ['F', 'AAL']
-TOLERANCE     = 0.0025
-STOP_LOSS_PCT = 0.05   # 5% stop below fill price
-IB_HOST       = '127.0.0.1'
-IB_PORT       = 4001
-CLIENT_ID     = 2
-ET            = ZoneInfo('America/New_York')
+TICKERS         = ['F', 'AAL']
+TOLERANCE       = 0.0025
+STOP_LOSS_PCT   = 0.05   # 5% stop below fill price
+IB_HOST         = '127.0.0.1'
+IB_PORT         = 4001
+CLIENT_ID       = 2
+ET              = ZoneInfo('America/New_York')
+CONNECT_RETRIES = 5
+CONNECT_DELAY   = 30     # seconds between connect attempts
 
 
 def connect():
-    ib = IB()
-    ib.connect(IB_HOST, IB_PORT, clientId=CLIENT_ID)
-    log.info("Connected to IB Gateway")
-    return ib
+    for attempt in range(1, CONNECT_RETRIES + 1):
+        try:
+            ib = IB()
+            ib.connect(IB_HOST, IB_PORT, clientId=CLIENT_ID)
+            log.info("Connected to IB Gateway")
+            return ib
+        except Exception as e:
+            log.warning(f"Connect attempt {attempt}/{CONNECT_RETRIES} failed: {e}")
+            if attempt < CONNECT_RETRIES:
+                time.sleep(CONNECT_DELAY)
+    raise ConnectionError(f"Failed to connect after {CONNECT_RETRIES} attempts")
 
 
 def get_macd(ib, ticker):
