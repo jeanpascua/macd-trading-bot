@@ -1,4 +1,4 @@
-from ib_insync import IB, Stock, Forex, MarketOrder, util
+from ib_insync import IB, Stock, Forex, MarketOrder, StopOrder, util
 import pandas_ta as ta
 import time
 import logging
@@ -15,12 +15,13 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-TICKERS   = ['F', 'AAL']
-TOLERANCE = 0.0025
-IB_HOST   = '127.0.0.1'
-IB_PORT   = 4001
-CLIENT_ID = 2
-ET        = ZoneInfo('America/New_York')
+TICKERS       = ['F', 'AAL']
+TOLERANCE     = 0.0025
+STOP_LOSS_PCT = 0.05   # 5% stop below fill price
+IB_HOST       = '127.0.0.1'
+IB_PORT       = 4001
+CLIENT_ID     = 2
+ET            = ZoneInfo('America/New_York')
 
 
 def connect():
@@ -46,14 +47,13 @@ def get_macd(ib, ticker):
         log.warning(f"{ticker}: not enough data")
         return None
 
-    macd_df   = ta.macd(df['close'], fast=12, slow=26, signal=9)
-    latest    = macd_df.iloc[-1]
-    macd_val  = latest['MACD_12_26_9']
-    sig_val   = latest['MACDs_12_26_9']
-    fast_ema  = df['close'].ewm(span=12, adjust=False).mean().iloc[-1]
+    macd_df    = ta.macd(df['close'], fast=12, slow=26, signal=9)
+    latest     = macd_df.iloc[-1]
+    macd_val   = latest['MACD_12_26_9']
+    sig_val    = latest['MACDs_12_26_9']
     last_close = float(df['close'].iloc[-1])
 
-    return macd_val, sig_val, fast_ema, last_close
+    return macd_val, sig_val, last_close
 
 
 def get_position(ib, ticker):
@@ -71,7 +71,7 @@ def get_usdcad_rate(ib):
     )
     if bars:
         return float(bars[-1].close)
-    return 1.38  # fallback
+    return 1.38
 
 
 def get_account_usd(ib):
@@ -80,7 +80,6 @@ def get_account_usd(ib):
         v = float(vals.get((tag, 'USD'), 0))
         if v > 0:
             return v
-    # CAD account — convert to USD
     for tag in ('TotalCashValue', 'AvailableFunds', 'NetLiquidation'):
         v = float(vals.get((tag, 'CAD'), 0))
         if v > 0:
@@ -91,11 +90,32 @@ def get_account_usd(ib):
     return 0
 
 
+def wait_for_fill(ib, trade, timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ib.sleep(1)
+        if trade.isDone():
+            status = trade.orderStatus.status
+            if status == 'Filled':
+                log.info(f"Filled: {trade.order.action} {trade.order.totalQuantity} {trade.contract.symbol}")
+                return True
+            log.warning(f"Order ended unfilled: {status}")
+            return False
+    log.warning(f"Fill timeout after {timeout}s: {trade.contract.symbol}")
+    return False
+
+
+def cancel_open_stops(ib, ticker):
+    for trade in ib.openTrades():
+        if (trade.contract.symbol == ticker
+                and trade.order.orderType == 'STP'
+                and trade.order.action == 'SELL'):
+            ib.cancelOrder(trade.order)
+            log.info(f"{ticker}: cancelled open stop order")
+
+
 def rebalance(ib):
     log.info("--- Rebalance start ---")
-    account_val = get_account_usd(ib)
-    log.info(f"Account value: {account_val:.2f}")
-
     n = len(TICKERS)
 
     for ticker in TICKERS:
@@ -104,8 +124,8 @@ def rebalance(ib):
             if result is None:
                 continue
 
-            macd_val, sig_val, fast_ema, last_close = result
-            delta_pct = (macd_val - sig_val) / fast_ema
+            macd_val, sig_val, last_close = result
+            delta_pct = (macd_val - sig_val) / last_close
             quantity  = get_position(ib, ticker)
 
             log.info(f"{ticker}: delta%={delta_pct:.4f} pos={quantity} price={last_close:.2f}")
@@ -113,19 +133,26 @@ def rebalance(ib):
             contract = Stock(ticker, 'SMART', 'USD')
 
             if quantity <= 0 and delta_pct > TOLERANCE:
-                cash_to_deploy = account_val / n
-                shares = int(cash_to_deploy / last_close)
+                account_val = get_account_usd(ib)  # fresh before each buy
+                shares = int((account_val / n) / last_close)
                 if shares < 1:
-                    log.warning(f"{ticker}: not enough cash for 1 share (${cash_to_deploy:.2f} / {last_close:.2f}), skipping")
+                    log.warning(f"{ticker}: not enough cash (${account_val/n:.2f} / {last_close:.2f}), skipping")
                     continue
-                order = MarketOrder('BUY', shares)
-                ib.placeOrder(contract, order)
-                log.info(f"{ticker}: BUY {shares} shares @ ~{last_close:.2f} (${shares*last_close:.2f})")
+
+                trade = ib.placeOrder(contract, MarketOrder('BUY', shares))
+                log.info(f"{ticker}: BUY {shares} @ ~{last_close:.2f} (${shares*last_close:.2f})")
+
+                if wait_for_fill(ib, trade):
+                    fill_price = trade.orderStatus.avgFillPrice or last_close
+                    stop_price = round(fill_price * (1 - STOP_LOSS_PCT), 2)
+                    ib.placeOrder(contract, StopOrder('SELL', shares, stop_price))
+                    log.info(f"{ticker}: stop-loss set @ {stop_price:.2f}")
 
             elif quantity > 0 and delta_pct < -TOLERANCE:
-                order = MarketOrder('SELL', quantity)
-                ib.placeOrder(contract, order)
+                cancel_open_stops(ib, ticker)
+                trade = ib.placeOrder(contract, MarketOrder('SELL', quantity))
                 log.info(f"{ticker}: SELL {quantity} shares")
+                wait_for_fill(ib, trade)
 
         except Exception as e:
             log.error(f"{ticker}: {e}")
@@ -166,4 +193,4 @@ if __name__ == '__main__':
         log.info(f"Next run: {run_at.strftime('%Y-%m-%d %H:%M %Z')} (in {wait_secs/3600:.1f}h)")
         time.sleep(max(wait_secs, 0))
         run_job()
-        time.sleep(60)  # prevent double-fire within same minute
+        time.sleep(60)
