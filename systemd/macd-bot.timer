@@ -1,0 +1,9 @@
+[Unit]
+Description=Run MACD bot at 9:35 ET on weekdays
+
+[Timer]
+OnCalendar=Mon-Fri 09:35:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target
