@@ -1,8 +1,7 @@
-from ib_insync import IB, Stock, Forex, MarketOrder, StopOrder, util
+from ib_insync import IB, Stock, Forex, LimitOrder, StopOrder, util
 import pandas_ta as ta
 import time
 import logging
-from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 logging.basicConfig(
@@ -17,13 +16,14 @@ log = logging.getLogger(__name__)
 
 TICKERS         = ['F', 'AAL']
 TOLERANCE       = 0.0025
-STOP_LOSS_PCT   = 0.05   # 5% stop below fill price
+STOP_LOSS_PCT   = 0.05    # 5% stop below fill price
+LIMIT_SLIP      = 0.01    # 1% buffer on limit orders to ensure fill
 IB_HOST         = '127.0.0.1'
 IB_PORT         = 4001
 CLIENT_ID       = 2
 ET              = ZoneInfo('America/New_York')
 CONNECT_RETRIES = 5
-CONNECT_DELAY   = 30     # seconds between connect attempts
+CONNECT_DELAY   = 30      # seconds between connect attempts
 
 
 def connect():
@@ -99,18 +99,19 @@ def get_account_usd(ib):
     return 0
 
 
-def wait_for_fill(ib, trade, timeout=30):
+def wait_for_fill(ib, trade, timeout=60):
     deadline = time.time() + timeout
     while time.time() < deadline:
         ib.sleep(1)
         if trade.isDone():
             status = trade.orderStatus.status
             if status == 'Filled':
-                log.info(f"Filled: {trade.order.action} {trade.order.totalQuantity} {trade.contract.symbol}")
+                log.info(f"Filled: {trade.order.action} {trade.order.totalQuantity} {trade.contract.symbol} @ {trade.orderStatus.avgFillPrice:.2f}")
                 return True
             log.warning(f"Order ended unfilled: {status}")
             return False
-    log.warning(f"Fill timeout after {timeout}s: {trade.contract.symbol}")
+    log.warning(f"Fill timeout after {timeout}s — cancelling: {trade.contract.symbol}")
+    ib.cancelOrder(trade.order)
     return False
 
 
@@ -142,14 +143,15 @@ def rebalance(ib):
             contract = Stock(ticker, 'SMART', 'USD')
 
             if quantity <= 0 and delta_pct > TOLERANCE:
-                account_val = get_account_usd(ib)  # fresh before each buy
+                account_val = get_account_usd(ib)
                 shares = int((account_val / n) / last_close)
                 if shares < 1:
                     log.warning(f"{ticker}: not enough cash (${account_val/n:.2f} / {last_close:.2f}), skipping")
                     continue
 
-                trade = ib.placeOrder(contract, MarketOrder('BUY', shares))
-                log.info(f"{ticker}: BUY {shares} @ ~{last_close:.2f} (${shares*last_close:.2f})")
+                limit_price = round(last_close * (1 + LIMIT_SLIP), 2)
+                trade = ib.placeOrder(contract, LimitOrder('BUY', shares, limit_price))
+                log.info(f"{ticker}: BUY {shares} limit @ {limit_price:.2f} (${shares*limit_price:.2f})")
 
                 if wait_for_fill(ib, trade):
                     fill_price = trade.orderStatus.avgFillPrice or last_close
@@ -159,8 +161,9 @@ def rebalance(ib):
 
             elif quantity > 0 and delta_pct < -TOLERANCE:
                 cancel_open_stops(ib, ticker)
-                trade = ib.placeOrder(contract, MarketOrder('SELL', quantity))
-                log.info(f"{ticker}: SELL {quantity} shares")
+                limit_price = round(last_close * (1 - LIMIT_SLIP), 2)
+                trade = ib.placeOrder(contract, LimitOrder('SELL', quantity, limit_price))
+                log.info(f"{ticker}: SELL {quantity} limit @ {limit_price:.2f}")
                 wait_for_fill(ib, trade)
 
         except Exception as e:
@@ -181,25 +184,5 @@ def run_job():
             ib.disconnect()
 
 
-def next_run_time():
-    now = datetime.now(ET)
-    target = now.replace(hour=9, minute=35, second=0, microsecond=0)
-    if now.weekday() < 5 and now < target:
-        return target
-    days = 1
-    while True:
-        candidate = (now + timedelta(days=days)).replace(hour=9, minute=35, second=0, microsecond=0)
-        if candidate.weekday() < 5:
-            return candidate
-        days += 1
-
-
 if __name__ == '__main__':
-    log.info("MACD bot started")
-    while True:
-        run_at = next_run_time()
-        wait_secs = (run_at - datetime.now(ET)).total_seconds()
-        log.info(f"Next run: {run_at.strftime('%Y-%m-%d %H:%M %Z')} (in {wait_secs/3600:.1f}h)")
-        time.sleep(max(wait_secs, 0))
-        run_job()
-        time.sleep(60)
+    run_job()
