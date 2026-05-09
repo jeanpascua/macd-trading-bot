@@ -1,0 +1,12 @@
+[Unit]
+Description=MACD Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=jean
+WorkingDirectory=/home/jean/trading
+ExecStart=/home/jean/trading/venv/bin/python /home/jean/trading/macd_bot.py
+StandardOutput=journal
+StandardError=journal
