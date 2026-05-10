@@ -124,8 +124,31 @@ def cancel_open_stops(ib, ticker):
             log.info(f"{ticker}: cancelled open stop order")
 
 
+def close_orphans(ib):
+    for pos in ib.positions():
+        sym = pos.contract.symbol
+        if sym not in TICKERS and pos.position > 0:
+            contract = Stock(sym, 'SMART', 'USD')
+            bars = ib.reqHistoricalData(
+                contract, endDateTime='', durationStr='2 D',
+                barSizeSetting='1 day', whatToShow='TRADES',
+                useRTH=True, formatDate=1
+            )
+            if not bars:
+                log.warning(f"{sym}: orphan position, couldn't get price — skipping")
+                continue
+            last_close = float(bars[-1].close)
+            qty = int(pos.position)
+            cancel_open_stops(ib, sym)
+            limit_price = round(last_close * (1 - LIMIT_SLIP), 2)
+            trade = ib.placeOrder(contract, LimitOrder('SELL', qty, limit_price))
+            log.info(f"{sym}: orphan — SELL {qty} limit @ {limit_price:.2f}")
+            wait_for_fill(ib, trade)
+
+
 def rebalance(ib):
     log.info("--- Rebalance start ---")
+    close_orphans(ib)
     n = len(TICKERS)
 
     for ticker in TICKERS:
