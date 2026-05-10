@@ -24,12 +24,14 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 - Bot checks MACD(12,26,9) signal on daily bars each weekday at 9:35 AM ET
 - Buys when MACD crosses above signal line, sells when it crosses below
 - Splits account evenly across tickers, whole shares only (Cash account limitation, no fractional)
+- Auto-sells any position not in TICKERS on rebalance (orphan cleanup)
 
 ## Infrastructure
 
 - IB Gateway 10.45 on ubuntu-server (192.168.1.79)
 - IBC 3.23.0 at `~/ibc` (handles automated login)
 - Xvfb on display `:10`, all managed by user systemd services
+- Systemd timer fires at 9:35 AM ET Mon-Fri, survives reboots
 - API on port 4001
 - Bot: `~/trading/macd_bot.py`, service: `macd-bot`
 - Logs: `~/trading/macd-bot.log`
@@ -37,7 +39,10 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 ## Tickers
 
 Started with SPY/QQQ/IWM but they're $300-700/share, too expensive for $50 CAD.
-Switched to **F (Ford)** and **AAL (American Airlines)**, both under $15/share, very liquid.
+Switched to **F (Ford)** and **AAL (American Airlines)** — both cheap and liquid.
+Swapped AAL for **PLTR (Palantir)** after backtesting: PLTR +507% return, 1.28 Sharpe vs AAL -1.2% return, 0.26 Sharpe (2020-2024).
+
+Current tickers: **F** and **PLTR**.
 
 When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 
@@ -46,12 +51,13 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 - [x] IBKR account approved
 - [x] $50 CAD deposited
 - [x] IB Gateway + IBC + Xvfb running on Ubuntu server
-- [x] Systemd services with auto-restart on boot
+- [x] Systemd timer — fires at 9:35 AM ET Mon-Fri, survives reboots
 - [x] MACD(12,26,9) strategy (~47% return over 6 years on QuantConnect backtest)
+- [x] vectorbt backtest mirroring live bot logic
 - [x] Bot deployed and all bugs fixed (see below)
-- [x] Test run placed real AAL order successfully (May 6, 2026)
-- [x] First live fill confirmed: AAL 1 share @ $13.10, filled May 7, 2026 at 9:30 AM ET
-- [x] Code on GitHub: https://github.com/jeanpascua/macd-trading-bot (private)
+- [x] First live fill confirmed: AAL 1 share @ $13.10, filled May 7, 2026
+- [x] Swapped AAL for PLTR based on backtest results
+- [x] Auto-sell orphan positions on rebalance
 - [ ] Add capital once a few runs look stable
 
 ## Bugs Fixed
