@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-TICKERS         = ['F', 'AAL']
+TICKERS         = ['F', 'PLTR']
 TOLERANCE       = 0.0025
 STOP_LOSS_PCT   = 0.05    # 5% stop below fill price
 LIMIT_SLIP      = 0.01    # 1% buffer on limit orders to ensure fill

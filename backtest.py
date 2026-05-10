@@ -1,7 +1,7 @@
 import vectorbt as vbt
 import yfinance as yf
 
-TICKERS   = ['F', 'AAL']
+TICKERS   = ['F', 'PLTR']
 START     = '2020-01-01'
 END       = '2024-12-31'
 TOLERANCE = 0.0025
@@ -31,6 +31,6 @@ for ticker in TICKERS:
     print(f"{'='*40}")
     print(pf.stats([
         'start_value', 'end_value', 'total_return',
-        'max_drawdown', 'sharpe_ratio', 'total_trades',
+        'max_dd', 'sharpe_ratio', 'total_trades',
         'win_rate', 'avg_winning_trade', 'avg_losing_trade'
     ]))
