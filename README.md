@@ -13,9 +13,8 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 - Base currency: CAD
 - Products: Stocks, Forex
 - Tax treaty: Canada-US (15% withholding on US dividends)
-- Account ID: U25601790
 
-**Funding:** $50 CAD to start. CAD-only account, bot auto-converts to USD using live forex rate from IBKR.
+**Funding:** Started with $50 CAD. CAD-only account, bot auto-converts to USD using live forex rate from IBKR.
 
 ## How It Works
 
@@ -38,7 +37,7 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 
 ## Tickers
 
-Started with SPY/QQQ/IWM but they're $300-700/share, too expensive for $50 CAD.
+Started with SPY/QQQ/IWM but they're $300-700/share, too expensive for a small account.
 Switched to **F (Ford)** and **AAL (American Airlines)** — both cheap and liquid.
 Swapped AAL for **PLTR (Palantir)** after backtesting: PLTR +507% return, 1.28 Sharpe vs AAL -1.2% return, 0.26 Sharpe (2020-2024).
 
@@ -49,16 +48,15 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 ## Status
 
 - [x] IBKR account approved
-- [x] $50 CAD deposited
 - [x] IB Gateway + IBC + Xvfb running on Ubuntu server
 - [x] Systemd timer — fires at 9:35 AM ET Mon-Fri, survives reboots
 - [x] MACD(12,26,9) strategy (~47% return over 6 years on QuantConnect backtest)
 - [x] vectorbt backtest mirroring live bot logic
-- [x] Bot deployed and all bugs fixed (see below)
-- [x] First live fill confirmed: AAL 1 share @ $13.10, filled May 7, 2026
+- [x] Bot deployed and all bugs fixed
+- [x] First live fill confirmed
 - [x] Swapped AAL for PLTR based on backtest results
 - [x] Auto-sell orphan positions on rebalance
-- [ ] Add capital once a few runs look stable
+- [ ] Scale account to $300+ USD, switch to SPY/QQQ/IWM
 
 ## Bugs Fixed
 
@@ -73,8 +71,6 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 - **Timezone bug:** scheduler hardcoded `13:35 UTC` which breaks when clocks fall back to EST. Replaced `schedule` lib with a `zoneinfo America/New_York` loop, always fires at 9:35 AM ET regardless of DST.
 - **ZoneInfoNotFoundError:** `tzdata` package missing from lean-env. Installed it.
 
-## Next Steps
-
-- Monitor logs after 9:35 AM ET each weekday
-- Once first trade fills cleanly, add $200-500 CAD
-- At scale, switch back to SPY/QQQ/IWM (need ~$300 USD per position minimum)
+**May 11, 2026:**
+- **Duplicate sell on orphan (Error 201):** `close_orphans()` placed sell when one already existed, rejected as short sell. Fixed: check open sells before placing.
+- **Gateway data farms broken at open:** bot crash loop on market open. Fixed via gateway restart. Root cause: flaky IBKR upstream.
