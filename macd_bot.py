@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-TICKERS         = ['F', 'PLTR']
+TICKERS         = ['F', 'SOFI']
 TOLERANCE       = 0.0025
 STOP_LOSS_PCT   = 0.05    # 5% stop below fill price
 LIMIT_SLIP      = 0.01    # 1% buffer on limit orders to ensure fill
@@ -125,9 +125,17 @@ def cancel_open_stops(ib, ticker):
 
 
 def close_orphans(ib):
+    open_sells = {
+        trade.contract.symbol
+        for trade in ib.openTrades()
+        if trade.order.action == 'SELL'
+    }
     for pos in ib.positions():
         sym = pos.contract.symbol
         if sym not in TICKERS and pos.position > 0:
+            if sym in open_sells:
+                log.info(f"{sym}: orphan — open sell already exists, skipping")
+                continue
             contract = Stock(sym, 'SMART', 'USD')
             bars = ib.reqHistoricalData(
                 contract, endDateTime='', durationStr='2 D',
