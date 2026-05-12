@@ -1,12 +1,14 @@
 [Unit]
 Description=MACD Trading Bot
-After=network-online.target
-Wants=network-online.target
+After=ibgateway.service
+Requires=ibgateway.service
 
 [Service]
 Type=oneshot
-User=jean
 WorkingDirectory=/home/jean/trading
-ExecStart=/home/jean/trading/venv/bin/python /home/jean/trading/macd_bot.py
-StandardOutput=journal
-StandardError=journal
+ExecStart=/home/jean/lean-env/bin/python /home/jean/trading/macd_bot.py
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target
