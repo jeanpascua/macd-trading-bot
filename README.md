@@ -32,7 +32,7 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 - Xvfb on display `:10`, all managed by user systemd services
 - Systemd timer fires at 9:35 AM ET Mon-Fri, survives reboots
 - API on port 4001
-- Bot: `~/trading/macd_bot.py`, service: `macd-bot`
+- Bot: `~/trading/macd_bot.py`, service: `macd-bot.service` triggered by `macd-bot.timer`
 - Logs: `~/trading/macd-bot.log`
 
 ## Tickers
@@ -40,8 +40,9 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 Started with SPY/QQQ/IWM but they're $300-700/share, too expensive for a small account.
 Switched to **F (Ford)** and **AAL (American Airlines)** — both cheap and liquid.
 Swapped AAL for **PLTR (Palantir)** after backtesting: PLTR +507% return, 1.28 Sharpe vs AAL -1.2% return, 0.26 Sharpe (2020-2024).
+PLTR ran up to ~$133/share, unreachable with a ~$72 USD account. Swapped PLTR for **SOFI** (cheap, liquid, similar volatility profile).
 
-Current tickers: **F** and **PLTR**.
+Current tickers: **F** and **SOFI**.
 
 When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 
@@ -56,6 +57,7 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 - [x] First live fill confirmed
 - [x] Swapped AAL for PLTR based on backtest results
 - [x] Auto-sell orphan positions on rebalance
+- [x] Swapped PLTR for SOFI (PLTR ran out of reach for small account)
 - [ ] Scale account to $300+ USD, switch to SPY/QQQ/IWM
 
 ## Bugs Fixed
@@ -74,3 +76,7 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 **May 11, 2026:**
 - **Duplicate sell on orphan (Error 201):** `close_orphans()` placed sell when one already existed, rejected as short sell. Fixed: check open sells before placing.
 - **Gateway data farms broken at open:** bot crash loop on market open. Fixed via gateway restart. Root cause: flaky IBKR upstream.
+
+**May 12, 2026:**
+- **Service restart loop:** `macd-bot.service` had `Restart=always` + `RestartSec=60` and no timer. Bot exited cleanly after each 4s run, systemd restarted it every minute all day. About 480 connect cycles instead of one daily run. Switched to `Type=oneshot` + `Restart=on-failure`, triggered by `macd-bot.timer` with `OnCalendar=Mon-Fri *-*-* 09:35:00 America/New_York`. Gotcha: timezone goes IN the OnCalendar expression, NOT as a separate `Timezone=` field in `[Timer]` (that field doesn't exist, silently ignored, fires at UTC).
+- **Cosmetic ib_insync warning accepted:** `ERROR completed orders request timed out` appears once per run from ib_insync's internal sync. Per [ib_insync#355](https://github.com/erdewit/ib_insync/issues/355), harmless. Bot doesn't read `ib.orders()` completed history. `ib.RequestTimeout` does not control this. Living with one ERROR line per daily run.
