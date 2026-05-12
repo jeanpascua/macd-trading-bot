@@ -30,7 +30,6 @@ def connect():
     for attempt in range(1, CONNECT_RETRIES + 1):
         try:
             ib = IB()
-            ib.RequestTimeout = 30  # default 4s, cash account sync can stall
             ib.connect(IB_HOST, IB_PORT, clientId=CLIENT_ID)
             log.info("Connected to IB Gateway")
             return ib
