@@ -1,8 +1,8 @@
 [Unit]
-Description=MACD Bot daily trigger (Mon-Fri 9:35 AM ET)
+Description=MACD Bot daily trigger (Mon-Fri 3:55 PM ET)
 
 [Timer]
-OnCalendar=Mon-Fri *-*-* 09:35:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 15:55:00 America/New_York
 Persistent=true
 
 [Install]

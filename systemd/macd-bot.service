@@ -9,6 +9,3 @@ WorkingDirectory=/home/jean/trading
 ExecStart=/home/jean/lean-env/bin/python /home/jean/trading/macd_bot.py
 Restart=on-failure
 RestartSec=60
-
-[Install]
-WantedBy=default.target

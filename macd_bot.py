@@ -15,8 +15,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 TICKERS         = ['F', 'SOFI']
-TOLERANCE       = 0.0025
-STOP_LOSS_PCT   = 0.05    # 5% stop below fill price
+STOP_LOSS_PCT   = 0.05    # 5% trailing stop below last close
 LIMIT_SLIP      = 0.01    # 1% buffer on limit orders to ensure fill
 IB_HOST         = '127.0.0.1'
 IB_PORT         = 4001
@@ -57,12 +56,15 @@ def get_macd(ib, ticker):
         return None
 
     macd_df    = ta.macd(df['close'], fast=12, slow=26, signal=9)
-    latest     = macd_df.iloc[-1]
-    macd_val   = latest['MACD_12_26_9']
-    sig_val    = latest['MACDs_12_26_9']
+    curr       = macd_df.iloc[-1]
+    prev       = macd_df.iloc[-2]
+    macd_val   = float(curr['MACD_12_26_9'])
+    sig_val    = float(curr['MACDs_12_26_9'])
+    prev_macd  = float(prev['MACD_12_26_9'])
+    prev_sig   = float(prev['MACDs_12_26_9'])
     last_close = float(df['close'].iloc[-1])
 
-    return macd_val, sig_val, last_close
+    return macd_val, sig_val, prev_macd, prev_sig, last_close
 
 
 def get_position(ib, ticker):
@@ -154,10 +156,35 @@ def close_orphans(ib):
             wait_for_fill(ib, trade)
 
 
+def update_trailing_stop(ib, ticker, quantity, last_close):
+    new_stop = round(last_close * (1 - STOP_LOSS_PCT), 2)
+    contract = Stock(ticker, 'SMART', 'USD')
+    existing = None
+    for trade in ib.openTrades():
+        if (trade.contract.symbol == ticker
+                and trade.order.orderType == 'STP'
+                and trade.order.action == 'SELL'):
+            existing = trade
+            break
+    if existing is None:
+        ib.placeOrder(contract, StopOrder('SELL', int(quantity), new_stop))
+        log.info(f"{ticker}: missing stop, placed @ {new_stop:.2f}")
+        return
+    old_stop = float(existing.order.auxPrice)
+    if new_stop > old_stop:
+        ib.cancelOrder(existing.order)
+        ib.placeOrder(contract, StopOrder('SELL', int(quantity), new_stop))
+        log.info(f"{ticker}: trailed stop {old_stop:.2f} -> {new_stop:.2f}")
+    else:
+        log.info(f"{ticker}: stop held @ {old_stop:.2f} (candidate {new_stop:.2f})")
+
+
 def rebalance(ib):
     log.info("--- Rebalance start ---")
     close_orphans(ib)
     n = len(TICKERS)
+    account_val = get_account_usd(ib)
+    log.info(f"Account: ${account_val:.2f} USD")
 
     for ticker in TICKERS:
         try:
@@ -165,16 +192,22 @@ def rebalance(ib):
             if result is None:
                 continue
 
-            macd_val, sig_val, last_close = result
-            delta_pct = (macd_val - sig_val) / last_close
-            quantity  = get_position(ib, ticker)
+            macd_val, sig_val, prev_macd, prev_sig, last_close = result
+            curr_delta = macd_val - sig_val
+            prev_delta = prev_macd - prev_sig
+            quantity   = get_position(ib, ticker)
 
-            log.info(f"{ticker}: delta%={delta_pct:.4f} pos={quantity} price={last_close:.2f}")
+            log.info(
+                f"{ticker}: macd={macd_val:.4f} sig={sig_val:.4f} "
+                f"prev_delta={prev_delta:.4f} curr_delta={curr_delta:.4f} "
+                f"pos={quantity} price={last_close:.2f}"
+            )
 
             contract = Stock(ticker, 'SMART', 'USD')
+            bullish_cross = prev_delta <= 0 and curr_delta > 0
+            bearish_cross = prev_delta >= 0 and curr_delta < 0
 
-            if quantity <= 0 and delta_pct > TOLERANCE:
-                account_val = get_account_usd(ib)
+            if quantity <= 0 and bullish_cross:
                 shares = int((account_val / n) / last_close)
                 if shares < 1:
                     log.warning(f"{ticker}: not enough cash (${account_val/n:.2f} / {last_close:.2f}), skipping")
@@ -187,15 +220,21 @@ def rebalance(ib):
                 if wait_for_fill(ib, trade):
                     fill_price = trade.orderStatus.avgFillPrice or last_close
                     stop_price = round(fill_price * (1 - STOP_LOSS_PCT), 2)
-                    ib.placeOrder(contract, StopOrder('SELL', shares, stop_price))
-                    log.info(f"{ticker}: stop-loss set @ {stop_price:.2f}")
+                    try:
+                        ib.placeOrder(contract, StopOrder('SELL', shares, stop_price))
+                        log.info(f"{ticker}: stop-loss set @ {stop_price:.2f}")
+                    except Exception as e:
+                        log.error(f"{ticker}: stop placement failed: {e}")
 
-            elif quantity > 0 and delta_pct < -TOLERANCE:
+            elif quantity > 0 and bearish_cross:
                 cancel_open_stops(ib, ticker)
                 limit_price = round(last_close * (1 - LIMIT_SLIP), 2)
                 trade = ib.placeOrder(contract, LimitOrder('SELL', quantity, limit_price))
                 log.info(f"{ticker}: SELL {quantity} limit @ {limit_price:.2f}")
                 wait_for_fill(ib, trade)
+
+            elif quantity > 0:
+                update_trailing_stop(ib, ticker, quantity, last_close)
 
         except Exception as e:
             log.error(f"{ticker}: {e}")
