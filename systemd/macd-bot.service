@@ -6,6 +6,7 @@ Requires=ibgateway.service
 [Service]
 Type=oneshot
 WorkingDirectory=/home/jean/trading
+EnvironmentFile=/home/jean/trading/.env
 ExecStart=/home/jean/lean-env/bin/python /home/jean/trading/macd_bot.py
 Restart=on-failure
 RestartSec=60

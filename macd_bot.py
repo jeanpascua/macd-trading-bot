@@ -3,6 +3,7 @@ import pandas_ta as ta
 import time
 import logging
 from zoneinfo import ZoneInfo
+from discord_notify import notify
 
 logging.basicConfig(
     level=logging.INFO,
@@ -108,12 +109,19 @@ def wait_for_fill(ib, trade, timeout=60):
         if trade.isDone():
             status = trade.orderStatus.status
             if status == 'Filled':
-                log.info(f"Filled: {trade.order.action} {trade.order.totalQuantity} {trade.contract.symbol} @ {trade.orderStatus.avgFillPrice:.2f}")
+                sym = trade.contract.symbol
+                action = trade.order.action
+                qty = trade.order.totalQuantity
+                px = trade.orderStatus.avgFillPrice
+                log.info(f"Filled: {action} {qty} {sym} @ {px:.2f}")
+                notify(f"{action} {sym} x{qty} @ ${px:.2f}", level=('buy' if action == 'BUY' else 'sell'))
                 return True
             log.warning(f"Order ended unfilled: {status}")
+            notify(f"{trade.contract.symbol} unfilled: {status}", level='warn')
             return False
     log.warning(f"Fill timeout after {timeout}s — cancelling: {trade.contract.symbol}")
     ib.cancelOrder(trade.order)
+    notify(f"{trade.contract.symbol} fill timeout, cancelled", level='warn')
     return False
 
 
@@ -185,6 +193,7 @@ def rebalance(ib):
     n = len(TICKERS)
     account_val = get_account_usd(ib)
     log.info(f"Account: ${account_val:.2f} USD")
+    notify(f"Bot run — account ${account_val:.2f} USD, tickers {','.join(TICKERS)}", level='start')
 
     for ticker in TICKERS:
         try:
@@ -238,8 +247,14 @@ def rebalance(ib):
 
         except Exception as e:
             log.error(f"{ticker}: {e}")
+            notify(f"{ticker} error: {e}", level='error')
 
+    positions_summary = ', '.join(
+        f"{p.contract.symbol} x{int(p.position)}"
+        for p in ib.positions() if p.position != 0
+    ) or 'none'
     log.info("--- Rebalance done ---")
+    notify(f"Done. Positions: {positions_summary}", level='done')
 
 
 def run_job():
@@ -249,6 +264,7 @@ def run_job():
         rebalance(ib)
     except Exception as e:
         log.error(f"Job failed: {e}")
+        notify(f"Job failed: {e}", level='error')
     finally:
         if ib and ib.isConnected():
             ib.disconnect()
