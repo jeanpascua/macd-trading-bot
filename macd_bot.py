@@ -24,6 +24,7 @@ CLIENT_ID       = 2
 ET              = ZoneInfo('America/New_York')
 CONNECT_RETRIES = 5
 CONNECT_DELAY   = 30      # seconds between connect attempts
+ORDER_TIF       = 'DAY'   # explicit TIF to avoid IBKR preset Error 10349
 
 
 def connect():
@@ -102,6 +103,24 @@ def get_account_usd(ib):
     return 0
 
 
+def buy_limit(shares, price):
+    o = LimitOrder('BUY', shares, price)
+    o.tif = ORDER_TIF
+    return o
+
+
+def sell_limit(qty, price):
+    o = LimitOrder('SELL', qty, price)
+    o.tif = ORDER_TIF
+    return o
+
+
+def sell_stop(qty, stop_price):
+    o = StopOrder('SELL', int(qty), stop_price)
+    o.tif = ORDER_TIF
+    return o
+
+
 def wait_for_fill(ib, trade, timeout=60):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -159,7 +178,7 @@ def close_orphans(ib):
             qty = int(pos.position)
             cancel_open_stops(ib, sym)
             limit_price = round(last_close * (1 - LIMIT_SLIP), 2)
-            trade = ib.placeOrder(contract, LimitOrder('SELL', qty, limit_price))
+            trade = ib.placeOrder(contract, sell_limit(qty, limit_price))
             log.info(f"{sym}: orphan — SELL {qty} limit @ {limit_price:.2f}")
             wait_for_fill(ib, trade)
 
@@ -175,13 +194,13 @@ def update_trailing_stop(ib, ticker, quantity, last_close):
             existing = trade
             break
     if existing is None:
-        ib.placeOrder(contract, StopOrder('SELL', int(quantity), new_stop))
+        ib.placeOrder(contract, sell_stop(int(quantity), new_stop))
         log.info(f"{ticker}: missing stop, placed @ {new_stop:.2f}")
         return
     old_stop = float(existing.order.auxPrice)
     if new_stop > old_stop:
         ib.cancelOrder(existing.order)
-        ib.placeOrder(contract, StopOrder('SELL', int(quantity), new_stop))
+        ib.placeOrder(contract, sell_stop(int(quantity), new_stop))
         log.info(f"{ticker}: trailed stop {old_stop:.2f} -> {new_stop:.2f}")
     else:
         log.info(f"{ticker}: stop held @ {old_stop:.2f} (candidate {new_stop:.2f})")
@@ -223,14 +242,14 @@ def rebalance(ib):
                     continue
 
                 limit_price = round(last_close * (1 + LIMIT_SLIP), 2)
-                trade = ib.placeOrder(contract, LimitOrder('BUY', shares, limit_price))
+                trade = ib.placeOrder(contract, buy_limit(shares, limit_price))
                 log.info(f"{ticker}: BUY {shares} limit @ {limit_price:.2f} (${shares*limit_price:.2f})")
 
                 if wait_for_fill(ib, trade):
                     fill_price = trade.orderStatus.avgFillPrice or last_close
                     stop_price = round(fill_price * (1 - STOP_LOSS_PCT), 2)
                     try:
-                        ib.placeOrder(contract, StopOrder('SELL', shares, stop_price))
+                        ib.placeOrder(contract, sell_stop(shares, stop_price))
                         log.info(f"{ticker}: stop-loss set @ {stop_price:.2f}")
                     except Exception as e:
                         log.error(f"{ticker}: stop placement failed: {e}")
@@ -238,7 +257,7 @@ def rebalance(ib):
             elif quantity > 0 and bearish_cross:
                 cancel_open_stops(ib, ticker)
                 limit_price = round(last_close * (1 - LIMIT_SLIP), 2)
-                trade = ib.placeOrder(contract, LimitOrder('SELL', quantity, limit_price))
+                trade = ib.placeOrder(contract, sell_limit(quantity, limit_price))
                 log.info(f"{ticker}: SELL {quantity} limit @ {limit_price:.2f}")
                 wait_for_fill(ib, trade)
 
