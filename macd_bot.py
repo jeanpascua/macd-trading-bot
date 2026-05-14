@@ -25,6 +25,7 @@ ET              = ZoneInfo('America/New_York')
 CONNECT_RETRIES = 5
 CONNECT_DELAY   = 30      # seconds between connect attempts
 ORDER_TIF       = 'DAY'   # explicit TIF to avoid IBKR preset Error 10349
+STOP_TIF        = 'GTC'   # stop-loss orders persist overnight
 
 
 def connect():
@@ -117,7 +118,7 @@ def sell_limit(qty, price):
 
 def sell_stop(qty, stop_price):
     o = StopOrder('SELL', int(qty), stop_price)
-    o.tif = ORDER_TIF
+    o.tif = STOP_TIF
     return o
 
 
