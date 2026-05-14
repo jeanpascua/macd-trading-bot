@@ -60,7 +60,7 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 - [x] Swapped AAL for PLTR based on backtest results
 - [x] Auto-sell orphan positions on rebalance
 - [x] Swapped PLTR for SOFI (PLTR ran out of reach for small account)
-- [x] Discord notifications wired (webhook URL pending)
+- [x] Discord notifications live (webhook set 2026-05-14)
 - [ ] Scale account to $300+ USD, switch to SPY/QQQ/IWM
 
 ## Bugs Fixed
