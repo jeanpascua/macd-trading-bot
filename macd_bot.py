@@ -2,6 +2,7 @@ from ib_insync import IB, Stock, Forex, LimitOrder, StopLimitOrder, util
 import pandas_ta as ta
 import time
 import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from discord_notify import notify
@@ -10,7 +11,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
     handlers=[
-        logging.FileHandler('/home/jean/trading/macd-bot.log'),
+        RotatingFileHandler('/home/jean/trading/macd-bot.log', maxBytes=5_000_000, backupCount=3),
         logging.StreamHandler()
     ]
 )

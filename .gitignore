@@ -1,6 +1,9 @@
 *.log
 *.bak
+*.bak.*
 __pycache__/
 *.pyc
 .env
+.env.bak*
 .lean-ctx/
+pnl-summaries/

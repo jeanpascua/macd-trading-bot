@@ -1,6 +1,10 @@
 import os
 import logging
-import requests
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 log = logging.getLogger(__name__)
 
@@ -9,7 +13,7 @@ TIMEOUT = 5
 
 
 def notify(message: str, level: str = 'info') -> None:
-    if not WEBHOOK_URL:
+    if not WEBHOOK_URL or requests is None:
         return
     prefix = {'info': '', 'buy': '🟢 ', 'sell': '🔴 ', 'warn': '⚠️ ', 'error': '🛑 ', 'start': '🚀 ', 'done': '✅ '}.get(level, '')
     payload = {'content': f'{prefix}{message}'[:1900]}
