@@ -2,6 +2,7 @@ from ib_insync import IB, Stock, Forex, LimitOrder, StopLimitOrder, util
 import pandas_ta as ta
 import time
 import logging
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from discord_notify import notify
 
@@ -44,9 +45,10 @@ def connect():
 
 def get_macd(ib, ticker):
     contract = Stock(ticker, 'SMART', 'USD')
+    end_dt = datetime.now(ET).strftime('%Y%m%d %H:%M:%S')
     bars = ib.reqHistoricalData(
         contract,
-        endDateTime='',
+        endDateTime=end_dt,
         durationStr='90 D',
         barSizeSetting='1 day',
         whatToShow='TRADES',
@@ -200,7 +202,7 @@ def update_trailing_stop(ib, ticker, quantity, last_close):
         log.info(f"{ticker}: missing stop, placed @ {new_stop:.2f}")
         return
     old_stop = float(existing.order.auxPrice)
-    if new_stop > old_stop:
+    if new_stop > old_stop + 0.001:
         ib.cancelOrder(existing.order)
         ib.placeOrder(contract, sell_stop(int(quantity), new_stop))
         log.info(f"{ticker}: trailed stop {old_stop:.2f} -> {new_stop:.2f}")
@@ -233,8 +235,8 @@ def rebalance(ib):
             )
 
             contract = Stock(ticker, 'SMART', 'USD')
-            bullish_cross = prev_delta <= 0 and curr_delta > 0
-            bearish_cross = prev_delta >= 0 and curr_delta < 0
+            bullish_cross = prev_delta < 0 and curr_delta > 0
+            bearish_cross = prev_delta > 0 and curr_delta < 0
 
             if quantity <= 0 and bullish_cross:
                 available = get_account_usd(ib)
@@ -250,18 +252,30 @@ def rebalance(ib):
                 if wait_for_fill(ib, trade):
                     fill_price = trade.orderStatus.avgFillPrice or last_close
                     stop_price = round(fill_price * (1 - STOP_LOSS_PCT), 2)
-                    try:
-                        ib.placeOrder(contract, sell_stop(shares, stop_price))
-                        log.info(f"{ticker}: stop-loss set @ {stop_price:.2f}")
-                    except Exception as e:
-                        log.error(f"{ticker}: stop placement failed: {e}")
+                    placed = False
+                    for attempt in range(3):
+                        try:
+                            ib.placeOrder(contract, sell_stop(shares, stop_price))
+                            log.info(f"{ticker}: stop-loss set @ {stop_price:.2f}")
+                            placed = True
+                            break
+                        except Exception as e:
+                            log.warning(f"{ticker}: stop attempt {attempt+1}/3 failed: {e}")
+                            ib.sleep(2)
+                    if not placed:
+                        log.error(f"{ticker}: stop placement failed 3x — emergency sell")
+                        notify(f"{ticker} stop failed 3x, emergency sell", level='error')
+                        emergency = ib.placeOrder(contract, sell_limit(shares, round(fill_price * (1 - LIMIT_SLIP), 2)))
+                        wait_for_fill(ib, emergency)
 
             elif quantity > 0 and bearish_cross:
                 cancel_open_stops(ib, ticker)
                 limit_price = round(last_close * (1 - LIMIT_SLIP), 2)
                 trade = ib.placeOrder(contract, sell_limit(quantity, limit_price))
                 log.info(f"{ticker}: SELL {quantity} limit @ {limit_price:.2f}")
-                wait_for_fill(ib, trade)
+                if not wait_for_fill(ib, trade):
+                    log.error(f"{ticker}: SELL unfilled — position still open, stop may be missing")
+                    notify(f"{ticker} SELL unfilled — manual check needed", level='error')
 
             elif quantity > 0:
                 update_trailing_stop(ib, ticker, quantity, last_close)
@@ -288,6 +302,7 @@ def run_job():
         notify(f"Job failed: {e}", level='error')
     finally:
         if ib and ib.isConnected():
+            ib.sleep(2)
             ib.disconnect()
 
 

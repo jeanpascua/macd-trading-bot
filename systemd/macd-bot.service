@@ -10,3 +10,4 @@ EnvironmentFile=/home/jean/trading/.env
 ExecStart=/home/jean/lean-env/bin/python /home/jean/trading/macd_bot.py
 Restart=on-failure
 RestartSec=60
+TimeoutStartSec=180
