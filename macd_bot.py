@@ -1,4 +1,4 @@
-from ib_insync import IB, Stock, Forex, LimitOrder, StopOrder, util
+from ib_insync import IB, Stock, Forex, LimitOrder, StopLimitOrder, util
 import pandas_ta as ta
 import time
 import logging
@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-TICKERS         = ['F', 'SOFI']
+TICKERS         = ['F']
 STOP_LOSS_PCT   = 0.05    # 5% trailing stop below last close
 LIMIT_SLIP      = 0.01    # 1% buffer on limit orders to ensure fill
 IB_HOST         = '127.0.0.1'
@@ -117,7 +117,8 @@ def sell_limit(qty, price):
 
 
 def sell_stop(qty, stop_price):
-    o = StopOrder('SELL', int(qty), stop_price)
+    limit_price = round(stop_price * (1 - LIMIT_SLIP), 2)
+    o = StopLimitOrder('SELL', int(qty), stop_price, limit_price)
     o.tif = STOP_TIF
     return o
 
@@ -148,7 +149,7 @@ def wait_for_fill(ib, trade, timeout=60):
 def cancel_open_stops(ib, ticker):
     for trade in ib.openTrades():
         if (trade.contract.symbol == ticker
-                and trade.order.orderType == 'STP'
+                and trade.order.orderType in ('STP', 'STP LMT')
                 and trade.order.action == 'SELL'):
             ib.cancelOrder(trade.order)
             log.info(f"{ticker}: cancelled open stop order")
@@ -190,7 +191,7 @@ def update_trailing_stop(ib, ticker, quantity, last_close):
     existing = None
     for trade in ib.openTrades():
         if (trade.contract.symbol == ticker
-                and trade.order.orderType == 'STP'
+                and trade.order.orderType in ('STP', 'STP LMT')
                 and trade.order.action == 'SELL'):
             existing = trade
             break
@@ -210,7 +211,6 @@ def update_trailing_stop(ib, ticker, quantity, last_close):
 def rebalance(ib):
     log.info("--- Rebalance start ---")
     close_orphans(ib)
-    n = len(TICKERS)
     account_val = get_account_usd(ib)
     log.info(f"Account: ${account_val:.2f} USD")
     notify(f"Bot run — account ${account_val:.2f} USD, tickers {','.join(TICKERS)}", level='start')
@@ -237,9 +237,10 @@ def rebalance(ib):
             bearish_cross = prev_delta >= 0 and curr_delta < 0
 
             if quantity <= 0 and bullish_cross:
-                shares = int((account_val / n) / last_close)
+                available = get_account_usd(ib)
+                shares = int(available / last_close)
                 if shares < 1:
-                    log.warning(f"{ticker}: not enough cash (${account_val/n:.2f} / {last_close:.2f}), skipping")
+                    log.warning(f"{ticker}: not enough cash (${available:.2f} / {last_close:.2f}), skipping")
                     continue
 
                 limit_price = round(last_close * (1 + LIMIT_SLIP), 2)
