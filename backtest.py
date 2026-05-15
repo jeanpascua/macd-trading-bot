@@ -1,12 +1,13 @@
 import vectorbt as vbt
 import yfinance as yf
 
-TICKERS = ['F', 'SOFI']
-START   = '2020-01-01'
-END     = '2024-12-31'
-FAST    = 12
-SLOW    = 26
-SIGNAL  = 9
+TICKERS       = ['F']
+START         = '2020-01-01'
+END           = '2024-12-31'
+FAST          = 12
+SLOW          = 26
+SIGNAL        = 9
+STOP_LOSS_PCT = 0.05
 
 for ticker in TICKERS:
     df    = yf.download(ticker, start=START, end=END, auto_adjust=True, progress=False)
@@ -22,7 +23,9 @@ for ticker in TICKERS:
         close, entries, exits,
         init_cash=10_000,
         fees=0.001,
-        freq='D'
+        freq='D',
+        sl_stop=STOP_LOSS_PCT,
+        sl_trail=True,
     )
 
     print(f"\n{'='*40}")
