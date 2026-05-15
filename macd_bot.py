@@ -1,4 +1,4 @@
-from ib_insync import IB, Stock, Forex, LimitOrder, StopLimitOrder, util
+from ib_async import IB, Stock, Forex, LimitOrder, StopLimitOrder, util
 import pandas_ta as ta
 import time
 import logging
