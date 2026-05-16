@@ -24,6 +24,7 @@ IB_HOST         = '127.0.0.1'
 IB_PORT         = 4001
 CLIENT_ID       = 2
 ET              = ZoneInfo('America/New_York')
+UTC             = ZoneInfo('UTC')
 CONNECT_RETRIES = 5
 CONNECT_DELAY   = 30      # seconds between connect attempts
 ORDER_TIF       = 'DAY'   # explicit TIF to avoid IBKR preset Error 10349
@@ -46,7 +47,9 @@ def connect():
 
 def get_macd(ib, ticker):
     contract = Stock(ticker, 'SMART', 'USD')
-    end_dt = datetime.now(ET).strftime('%Y%m%d %H:%M:%S')
+    # IBKR new format: yyyymmdd-HH:MM:SS in UTC (hyphen implies UTC).
+    # Avoids Warning 2174 — implied timezone removed in next API release.
+    end_dt = datetime.now(UTC).strftime('%Y%m%d-%H:%M:%S')
     bars = ib.reqHistoricalData(
         contract,
         endDateTime=end_dt,
