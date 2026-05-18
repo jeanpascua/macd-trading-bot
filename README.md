@@ -6,7 +6,7 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 
 ## Setup
 
-**Stack:** Python (ib-insync + pandas-ta), running on the Ubuntu server
+**Stack:** Python (ib_async + pandas-ta), running on the Ubuntu server
 
 **IBKR Account:**
 - Account type: Cash, Individual, IBKR Pro
@@ -42,9 +42,9 @@ Manual trading takes too long. Emotion messes up decisions. This just follows th
 Started with SPY/QQQ/IWM but they're $300-700/share, too expensive for a small account.
 Switched to **F (Ford)** and **AAL (American Airlines)** — both cheap and liquid.
 Swapped AAL for **PLTR (Palantir)** after backtesting: PLTR +507% return, 1.28 Sharpe vs AAL -1.2% return, 0.26 Sharpe (2020-2024).
-PLTR ran up to ~$133/share, unreachable with a ~$72 USD account. Swapped PLTR for **SOFI** (cheap, liquid, similar volatility profile).
+PLTR ran up to ~$133/share, unreachable with a ~$72 USD account. Swapped PLTR for SOFI, then dropped SOFI to focus on a single liquid ticker.
 
-Current tickers: **F** and **SOFI**.
+Current ticker: **F (Ford)** only.
 
 When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 
@@ -61,6 +61,8 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 - [x] Auto-sell orphan positions on rebalance
 - [x] Swapped PLTR for SOFI (PLTR ran out of reach for small account)
 - [x] Discord notifications live (webhook set 2026-05-14)
+- [x] Migrated ib_insync → ib_async (maintained fork, drop-in API)
+- [x] Focused on F only (dropped SOFI)
 - [ ] Scale account to $300+ USD, switch to SPY/QQQ/IWM
 
 ## Bugs Fixed
@@ -88,3 +90,10 @@ When account grows to $300+ USD, switch back to SPY/QQQ/IWM.
 - **Strategy silent for weeks (~0 real BUY signals across 2250 runs).** Four root causes: (a) bot fired at 9:35 AM ET → daily bar still empty → MACD computed on yesterday's close, always 1 day late; (b) old `delta_pct > 0.0025` tolerance scaled by price made the threshold tighter on cheap stocks (F at $12 needed a $0.03 macd-sig gap, hard to cross consistently); (c) no trailing stop meant winners gave back gains; (d) only `delta%` was logged → undebuggable. Fixes: timer moved to 3:55 PM ET, switched to crossover signal (`prev_delta <= 0` → `curr_delta > 0`), added 5% trailing stop that ratchets up each run, raw `macd`/`sig`/`prev_delta`/`curr_delta` now logged per ticker per run.
 - **Boot run at 2 AM ET (market closed):** `macd-bot.service` had `[Install] WantedBy=default.target`, so the service ran once at boot before the timer took over. Fix: removed `[Install]` section, `systemctl --user disable macd-bot.service`. Service is now `static`, fires only via timer. Rule: timer-driven oneshot services must NOT have an `[Install]` section.
 - **IBKR Error 10349 (`Order TIF was set to DAY based on order preset`):** every BUY and StopOrder triggered IBKR to cancel and re-submit because `ib_insync.Order.tif` defaults to `''` and the IBKR account preset overrides it to DAY. Orders still filled, but with extra latency and noise per run. Fix: added `ORDER_TIF = 'DAY'` constant and `buy_limit()` / `sell_limit()` / `sell_stop()` helpers that set `.tif` explicitly. All `LimitOrder` / `StopOrder` call sites swapped to use the helpers.
+
+**May 15, 2026:**
+- **Stop orders using market fills (slippage risk afterhours):** `StopOrder` triggers a market order, which can fill at a bad price in low-liquidity afterhours. Switched to `StopLimitOrder` — limit price set to 1% below trigger (`stop_price * (1 - LIMIT_SLIP)`). Verified live on F stop @ trigger $12.65 / limit $12.78.
+
+**May 16, 2026:**
+- **IBKR Warning 2174 on every `reqHistoricalData` call:** `Warning: You submitted request with date-time attributes without explicit time zone.` Fired because `endDateTime` was built with a naive datetime string. Fix: `get_macd()` now uses `datetime.now(UTC).strftime('%Y%m%d-%H:%M:%S')` (hyphen separator = UTC per IBKR docs). Other call sites use `endDateTime=''` (means "now", no warning).
+- **Migrated ib_insync → ib_async:** original `ib_insync` author died in 2024, library unmaintained. `ib_async` by `ib-api-reloaded` is the maintained fork with a drop-in API. No code changes required beyond swapping the import.
